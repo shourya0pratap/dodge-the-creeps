@@ -1,0 +1,11 @@
+# Node.js
+server/node_modules/
+server/.env
+
+# SQLite Database
+server/*.db
+server/*.db-journal
+
+# OS Metadata
+.DS_Store
+Thumbs.db
