@@ -47,7 +47,7 @@ app.get("/api/scores", (req, res) => {
   const query = `
     SELECT name, score 
     FROM scores 
-    ORDER BY score DESC, created_at ASC 
+    ORDER BY score DESC, updated_at ASC 
     LIMIT ?
   `;
 
