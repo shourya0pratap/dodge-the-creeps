@@ -31,13 +31,12 @@ const db = new sqlite3.Database(dbPath, (err) => {
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS scores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       score INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-
   db.run(`CREATE INDEX IF NOT EXISTS idx_scores_score ON scores (score DESC)`);
 });
 
@@ -61,39 +60,44 @@ app.get("/api/scores", (req, res) => {
   });
 });
 
-// POST /api/scores - Record a score
 app.post("/api/scores", (req, res) => {
-  let { name, score } = req.body;
+  let { player_id, name, score } = req.body;
 
-  // Validation & Sanitization
-  if (typeof name !== "string" || name.trim().length === 0) {
-    name = "Anonymous";
-  } else {
-    name = name.trim().slice(0, 16); // Enforce max 16 chars
+  if (!player_id || typeof player_id !== "string") {
+    return res.status(400).json({ error: "Missing player_id" });
   }
+
+  name =
+    typeof name === "string" && name.trim().length > 0
+      ? name.trim().slice(0, 16)
+      : "Anonymous";
 
   score = parseInt(score, 10);
   if (isNaN(score) || score < 0) {
     return res.status(400).json({ error: "Invalid score" });
   }
 
-  const insertQuery = `INSERT INTO scores (name, score) VALUES (?, ?)`;
+  // Atomic UPSERT keyed by player_id
+  const query = `
+    INSERT INTO scores (player_id, name, score, updated_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(player_id) DO UPDATE SET
+      score = MAX(scores.score, excluded.score),
+      name = excluded.name,
+      updated_at = CASE 
+        WHEN excluded.score > scores.score THEN CURRENT_TIMESTAMP 
+        ELSE scores.updated_at 
+      END
+  `;
 
-  db.run(insertQuery, [name, score], function (err) {
+  db.run(query, [player_id, name, score], function (err) {
     if (err) {
-      console.error("Database insert error:", err.message);
-      return res.status(500).json({ error: "Failed to save score" });
+      console.error("Database UPSERT error:", err.message);
+      return res.status(500).json({ error: "Failed to record score" });
     }
-
-    res.status(201).json({
-      success: true,
-      id: this.lastID,
-      name,
-      score,
-    });
+    res.status(200).json({ success: true, player_id, name, score });
   });
 });
-
 app.listen(PORT, () => {
   console.log(`Leaderboard backend running on port ${PORT}`);
 });
